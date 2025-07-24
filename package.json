@@ -1,6 +1,6 @@
 {
   "name": "chat-app",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "version": "1.0.0",
   "private": true,    
   "description": "A chat application built with Expo and React Native",
@@ -11,12 +11,14 @@
     "chat",
     "application"
   ],
-    "license": "MIT",
-    "repository": {},   
+  "license": "MIT",
+  "repository": {},   
   "scripts": {
+    "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "lint": "expo lint"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
