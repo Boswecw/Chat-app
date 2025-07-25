@@ -1,24 +1,13 @@
-// src/api/participants.js
 import axios from 'axios';
 
-const BASE_URL = 'https://dummy-chat-server.tribechat.com/api';
+const API_BASE = 'https://dummy-chat-server.tribechat.com/api';
 
 export const fetchAllParticipants = async () => {
   try {
-    const res = await axios.get(`${BASE_URL}/participants/all`);
-    return res.data; // Array of TParticipant
-  } catch (err) {
-    console.error('❌ Failed to fetch participants:', err);
-    throw err;
-  }
-};
-
-export const fetchUpdatedParticipants = async (since) => {
-  try {
-    const res = await axios.get(`${BASE_URL}/participants/updates/${since}`);
-    return res.data; // Array of updated TParticipant
-  } catch (err) {
-    console.error('❌ Failed to fetch updated participants:', err);
-    throw err;
+    const response = await axios.get(`${API_BASE}/participants/all`);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch participants:', error);
+    throw error;
   }
 };

@@ -38,7 +38,6 @@ const Avatar = ({
       <Image
         source={{ uri: imageUrl }}
         style={[styles.avatar, avatarStyle]}
-        defaultSource={require('./placeholder-avatar.png')} // Optional: add a placeholder
       />
     );
   }

@@ -1,18 +1,20 @@
-// src/state/sessionStore.js
 import { create } from 'zustand';
 
 const useSessionStore = create((set) => ({
   sessionUuid: '',
   apiVersion: 0,
-  lastUpdateTime: 0,
+  connected: false,
 
-  setSession: ({ sessionUuid, apiVersion }) =>
-    set({ sessionUuid, apiVersion }),
+  setSession: ({ sessionUuid, apiVersion }) => {
+    console.log('🔗 Session connected:', sessionUuid.substring(0, 8) + '...');
+    set({ sessionUuid, apiVersion, connected: true });
+  },
 
-  setLastUpdateTime: (time) => set({ lastUpdateTime: time }),
-
-  clearSession: () =>
-    set({ sessionUuid: '', apiVersion: 0, lastUpdateTime: 0 }),
+  clearSession: () => set({ 
+    sessionUuid: '', 
+    apiVersion: 0, 
+    connected: false 
+  }),
 }));
 
 export default useSessionStore;
