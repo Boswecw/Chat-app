@@ -3,7 +3,7 @@
  * Message grouping utilities for creating WhatsApp-style grouped messages
  */
 
-const TIME_GROUP_THRESHOLD = 5 * 60 * 1000; // 5 minutes in milliseconds
+const TIME_GROUP_THRESHOLD = 10 * 60 * 1000; // 10 minutes in milliseconds (increased for easier testing)
 
 /**
  * Determines if two messages should be grouped together
@@ -14,9 +14,15 @@ export const shouldGroupMessages = (currentMessage, previousMessage) => {
   // Different authors = no grouping
   if (currentMessage.authorUuid !== previousMessage.authorUuid) return false;
   
-  // Get timestamps
-  const currentTime = new Date(currentMessage.sentAt || currentMessage.createdAt).getTime();
-  const previousTime = new Date(previousMessage.sentAt || previousMessage.createdAt).getTime();
+  // Get timestamps - handle both sentAt and createdAt
+  const getCurrentTime = (msg) => {
+    const time = msg.sentAt || msg.createdAt;
+    if (!time) return Date.now(); // Fallback to now
+    return typeof time === 'number' ? time : new Date(time).getTime();
+  };
+  
+  const currentTime = getCurrentTime(currentMessage);
+  const previousTime = getCurrentTime(previousMessage);
   
   // Too much time between messages = no grouping
   const timeDiff = Math.abs(currentTime - previousTime);
@@ -27,26 +33,31 @@ export const shouldGroupMessages = (currentMessage, previousMessage) => {
 
 /**
  * Processes messages array and adds grouping metadata
+ * Handles inverted message order (newest first) correctly
  */
 export const processMessagesForGrouping = (messages) => {
   if (!Array.isArray(messages) || messages.length === 0) return [];
   
+  // Since messages are in reverse chronological order (newest first),
+  // we need to reverse the logic for grouping
   return messages.map((message, index) => {
-    const previousMessage = index > 0 ? messages[index - 1] : null;
-    const nextMessage = index < messages.length - 1 ? messages[index + 1] : null;
+    // In inverted order: "previous" is actually newer, "next" is actually older
+    const newerMessage = index > 0 ? messages[index - 1] : null;
+    const olderMessage = index < messages.length - 1 ? messages[index + 1] : null;
     
-    // Determine grouping position
-    const isGroupedWithPrevious = shouldGroupMessages(message, previousMessage);
-    const isGroupedWithNext = shouldGroupMessages(nextMessage, message);
+    // For grouping, we want to group with chronologically adjacent messages
+    // In the inverted array, we group "down" toward older messages
+    const isGroupedWithNewer = shouldGroupMessages(message, newerMessage);
+    const isGroupedWithOlder = shouldGroupMessages(olderMessage, message);
     
     let groupPosition = 'single'; // single, first, middle, last
     
-    if (isGroupedWithPrevious && isGroupedWithNext) {
+    if (isGroupedWithNewer && isGroupedWithOlder) {
       groupPosition = 'middle';
-    } else if (isGroupedWithPrevious && !isGroupedWithNext) {
-      groupPosition = 'last';
-    } else if (!isGroupedWithPrevious && isGroupedWithNext) {
-      groupPosition = 'first';
+    } else if (isGroupedWithNewer && !isGroupedWithOlder) {
+      groupPosition = 'first'; // First chronologically = last in group visually
+    } else if (!isGroupedWithNewer && isGroupedWithOlder) {
+      groupPosition = 'last'; // Last chronologically = first in group visually  
     } else {
       groupPosition = 'single';
     }
@@ -55,9 +66,9 @@ export const processMessagesForGrouping = (messages) => {
       ...message,
       grouping: {
         position: groupPosition,
-        showHeader: !isGroupedWithPrevious, // Show name/avatar only if not grouped with previous
-        showTail: !isGroupedWithNext, // Show timestamp only if not grouped with next
-        isGrouped: isGroupedWithPrevious || isGroupedWithNext,
+        showHeader: !isGroupedWithOlder, // Show name only on oldest in group (first visually)
+        showTail: !isGroupedWithNewer, // Show time only on newest in group (last visually)
+        isGrouped: isGroupedWithNewer || isGroupedWithOlder,
       }
     };
   });
@@ -96,6 +107,7 @@ export const getGroupedMessageStyle = (groupPosition, isOwnMessage) => {
 
 /**
  * Get appropriate border radius for grouped messages
+ * Updated to work with corrected grouping positions for inverted display
  */
 export const getGroupedBorderRadius = (groupPosition, isOwnMessage) => {
   const normalRadius = 12;
@@ -108,7 +120,7 @@ export const getGroupedBorderRadius = (groupPosition, isOwnMessage) => {
       return {
         borderRadius: normalRadius,
       };
-    case 'first':
+    case 'first': // First in group (visually last chronologically)
       return side === 'left' ? {
         borderTopLeftRadius: normalRadius,
         borderTopRightRadius: normalRadius,
@@ -132,7 +144,7 @@ export const getGroupedBorderRadius = (groupPosition, isOwnMessage) => {
         borderBottomLeftRadius: normalRadius,
         borderBottomRightRadius: reducedRadius,
       };
-    case 'last':
+    case 'last': // Last in group (visually first chronologically)
       return side === 'left' ? {
         borderTopLeftRadius: reducedRadius,
         borderTopRightRadius: normalRadius,

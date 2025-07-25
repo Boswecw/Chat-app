@@ -1,4 +1,4 @@
-// App.jsx - Enhanced with Message Grouping
+// App.jsx - Professional with Message Grouping + Reactions
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -11,12 +11,69 @@ import useSessionStore from './src/stores/sessionStore';
 // API Service
 import apiService from './src/services/apiService';
 
-// Message Grouping Utilities
-import { 
-  processMessagesForGrouping, 
-  getGroupedMessageStyle, 
-  getGroupedBorderRadius 
-} from './src/utils/messageGrouping';
+// Professional grouping logic
+const shouldGroup = (msg1, msg2) => {
+  if (!msg1 || !msg2) return false;
+  if (msg1.authorUuid !== msg2.authorUuid) return false;
+  
+  // 5 minute grouping window
+  const getTime = (msg) => {
+    const time = msg.sentAt || msg.createdAt;
+    return typeof time === 'number' ? time : new Date(time).getTime();
+  };
+  
+  const timeDiff = Math.abs(getTime(msg1) - getTime(msg2));
+  return timeDiff < (5 * 60 * 1000); // 5 minutes
+};
+
+// Professional border radius for grouped messages
+const getGroupedBorderRadius = (position, isOwnMessage) => {
+  const normalRadius = 18;
+  const reducedRadius = 6;
+  
+  switch (position) {
+    case 'single':
+      return { borderRadius: normalRadius };
+    case 'first':
+      return isOwnMessage ? {
+        borderTopLeftRadius: normalRadius,
+        borderTopRightRadius: normalRadius,
+        borderBottomLeftRadius: normalRadius,
+        borderBottomRightRadius: reducedRadius,
+      } : {
+        borderTopLeftRadius: normalRadius,
+        borderTopRightRadius: normalRadius,
+        borderBottomLeftRadius: reducedRadius,
+        borderBottomRightRadius: normalRadius,
+      };
+    case 'middle':
+      return isOwnMessage ? {
+        borderTopLeftRadius: normalRadius,
+        borderTopRightRadius: reducedRadius,
+        borderBottomLeftRadius: normalRadius,
+        borderBottomRightRadius: reducedRadius,
+      } : {
+        borderTopLeftRadius: reducedRadius,
+        borderTopRightRadius: normalRadius,
+        borderBottomLeftRadius: reducedRadius,
+        borderBottomRightRadius: normalRadius,
+      };
+    case 'last':
+      return isOwnMessage ? {
+        borderTopLeftRadius: normalRadius,
+        borderTopRightRadius: reducedRadius,
+        borderBottomLeftRadius: normalRadius,
+        borderBottomRightRadius: normalRadius,
+      } : {
+        borderTopLeftRadius: reducedRadius,
+        borderTopRightRadius: normalRadius,
+        borderBottomLeftRadius: normalRadius,
+        borderBottomRightRadius: normalRadius,
+      };
+    default:
+      return { borderRadius: normalRadius };
+  }
+};
 
 export default function App() {
   // Local UI state
@@ -24,7 +81,7 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [initializing, setInitializing] = useState(true);
 
-  // Zustand stores - access state directly
+  // Zustand stores
   const messages = useMessageStore(state => state.messages);
   const messagesLoading = useMessageStore(state => state.loading);
   const messagesError = useMessageStore(state => state.error);
@@ -36,9 +93,32 @@ export default function App() {
   const sessionUuid = useSessionStore(state => state.sessionUuid);
   const apiVersion = useSessionStore(state => state.apiVersion);
 
-  // Process messages with grouping metadata
+  // Professional message grouping
   const groupedMessages = useMemo(() => {
-    return processMessagesForGrouping(messages);
+    if (!messages || messages.length === 0) return [];
+    
+    return messages.map((message, index) => {
+      const nextMessage = index < messages.length - 1 ? messages[index + 1] : null;
+      const prevMessage = index > 0 ? messages[index - 1] : null;
+      
+      const groupWithNext = shouldGroup(message, nextMessage);
+      const groupWithPrev = shouldGroup(message, prevMessage);
+      
+      let position = 'single';
+      if (groupWithNext && groupWithPrev) position = 'middle';
+      else if (groupWithNext) position = 'first';
+      else if (groupWithPrev) position = 'last';
+      
+      return {
+        ...message,
+        grouping: {
+          position,
+          showHeader: !groupWithPrev,
+          showTail: !groupWithNext,
+          isGrouped: groupWithNext || groupWithPrev,
+        }
+      };
+    });
   }, [messages]);
 
   // Initialize app
@@ -49,23 +129,12 @@ export default function App() {
   const initializeApp = async () => {
     try {
       setInitializing(true);
-      
-      // Set loading states
       useMessageStore.getState().setLoading(true);
       useParticipantStore.getState().setLoading(true);
       useMessageStore.getState().clearError();
 
-      console.log('🚀 Initializing Chat App with Zustand...');
-
-      // Step 1: Test server connection
       const serverInfo = await apiService.getServerInfo();
       
-      // Step 2: Update session store
-      const sessionStore = useSessionStore.getState();
-      const currentSession = sessionStore.sessionUuid;
-      const sessionChanged = currentSession && currentSession !== serverInfo.sessionUuid;
-      
-      // Set server info manually
       useSessionStore.setState({
         sessionUuid: serverInfo.sessionUuid,
         apiVersion: serverInfo.apiVersion,
@@ -74,53 +143,18 @@ export default function App() {
         connectionAttempts: 0
       });
 
-      if (sessionChanged) {
-        console.log('🔄 Session changed, clearing caches...');
-        Alert.alert(
-          'Server Restarted',
-          'The chat server was restarted. Refreshing data...',
-          [{ text: 'OK' }]
-        );
-      }
-
-      // Step 3: Load participants and messages in parallel
       const [participantsData, messagesData] = await Promise.all([
         apiService.getAllParticipants(),
         apiService.getLatestMessages(),
       ]);
 
-      // Step 4: Update stores directly
       useParticipantStore.getState().setParticipants(participantsData);
       useMessageStore.getState().setMessages(messagesData);
 
-      console.log('✅ App initialized successfully');
-
     } catch (error) {
       console.error('❌ App initialization failed:', error);
-      
-      // Set error states
       useSessionStore.setState({ connected: false });
       useMessageStore.getState().setError(error.message);
-
-      const currentAttempts = useSessionStore.getState().connectionAttempts;
-      useSessionStore.setState({ connectionAttempts: currentAttempts + 1 });
-      
-      if (currentAttempts < 3) {
-        Alert.alert(
-          'Connection Error',
-          `Failed to connect to chat server (Attempt ${currentAttempts + 1}). Using offline mode.`,
-          [
-            { text: 'Retry', onPress: () => initializeApp() },
-            { text: 'Offline Mode', style: 'cancel' }
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Connection Failed',
-          'Could not connect to chat server. Using offline mode with cached data.',
-          [{ text: 'OK' }]
-        );
-      }
     } finally {
       setInitializing(false);
       useMessageStore.getState().setLoading(false);
@@ -138,12 +172,9 @@ export default function App() {
 
     try {
       if (connected) {
-        // Send to real server
         const serverMessage = await apiService.sendMessage(messageText);
         useMessageStore.getState().addMessage(serverMessage);
-        console.log('✅ Message sent and added to store');
       } else {
-        // Offline mode - add local message
         const localMessage = {
           uuid: `local-${Date.now()}`,
           text: messageText,
@@ -154,7 +185,6 @@ export default function App() {
           reactions: [],
         };
         useMessageStore.getState().addMessage(localMessage);
-        console.log('📴 Message added in offline mode');
       }
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -166,6 +196,36 @@ export default function App() {
     }
   };
 
+  // Render reactions row
+  const renderReactions = (reactions) => {
+    if (!reactions || reactions.length === 0) return null;
+    
+    // Group reactions by emoji
+    const reactionMap = {};
+    reactions.forEach(reaction => {
+      const emoji = reaction.emoji || reaction.type || '👍';
+      if (reactionMap[emoji]) {
+        reactionMap[emoji].count++;
+      } else {
+        reactionMap[emoji] = { count: 1, emoji };
+      }
+    });
+
+    const reactionGroups = Object.values(reactionMap);
+    if (reactionGroups.length === 0) return null;
+
+    return (
+      <View style={styles.reactionsContainer}>
+        {reactionGroups.map((reaction, index) => (
+          <View key={index} style={styles.reactionBubble}>
+            <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+            <Text style={styles.reactionCount}>{reaction.count}</Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   const renderMessage = ({ item, index }) => {
     const isOwnMessage = item.authorUuid === 'you';
     const displayName = getParticipantName ? getParticipantName(item.authorUuid) : 
@@ -175,27 +235,32 @@ export default function App() {
       new Date(item.sentAt || item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
       'Now';
 
-    // Get grouping metadata
     const grouping = item.grouping || { position: 'single', showHeader: true, showTail: true };
     const { position, showHeader, showTail } = grouping;
 
-    // Get dynamic styles based on grouping
-    const messageStyle = getGroupedMessageStyle(position, isOwnMessage);
+    // Professional spacing
+    const getSpacing = () => {
+      switch (position) {
+        case 'single': return { marginVertical: 6 };
+        case 'first': return { marginTop: 6, marginBottom: 2 };
+        case 'middle': return { marginVertical: 1 };
+        case 'last': return { marginTop: 2, marginBottom: 6 };
+        default: return { marginVertical: 4 };
+      }
+    };
+
     const borderRadiusStyle = getGroupedBorderRadius(position, isOwnMessage);
 
     return (
-      <View style={[styles.messageContainer, messageStyle]}>
+      <View style={[styles.messageContainer, getSpacing()]}>
         <View style={[
           styles.messageBubble, 
-          isOwnMessage && styles.ownMessage,
+          isOwnMessage ? styles.ownMessage : styles.otherMessage,
           borderRadiusStyle
         ]}>
-          {/* Show participant name only for first message in group */}
-          {showHeader && (
-            <Text style={[
-              styles.messageUser, 
-              isOwnMessage && styles.ownMessageUser
-            ]}>
+          {/* Participant name for first message in group */}
+          {showHeader && !isOwnMessage && (
+            <Text style={styles.messageUser}>
               {displayName}
             </Text>
           )}
@@ -203,34 +268,44 @@ export default function App() {
           {/* Message text */}
           <Text style={[
             styles.messageText, 
-            isOwnMessage && styles.ownMessageText,
-            !showHeader && styles.groupedMessageText
+            isOwnMessage ? styles.ownMessageText : styles.otherMessageText
           ]}>
             {item.text}
           </Text>
           
-          {/* Show timestamp only for last message in group */}
+          {/* Edited indicator */}
+          {item.editedAt && (
+            <Text style={[
+              styles.editedText,
+              isOwnMessage ? styles.ownEditedText : styles.otherEditedText
+            ]}>
+              edited
+            </Text>
+          )}
+          
+          {/* Timestamp for last message in group */}
           {showTail && (
             <Text style={[
               styles.messageTime, 
-              isOwnMessage && styles.ownMessageTime
+              isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime
             ]}>
               {messageTime}
             </Text>
           )}
         </View>
+        
+        {/* Reactions */}
+        {renderReactions(item.reactions)}
       </View>
     );
   };
 
-  // Show loading screen during initialization
   if (initializing) {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={[styles.container, styles.centered]}>
-          <ActivityIndicator size="large" color="#007bff" />
-          <Text style={styles.loadingText}>Initializing Chat App...</Text>
-          <Text style={styles.subText}>Loading with message grouping...</Text>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Loading Chat...</Text>
         </SafeAreaView>
       </SafeAreaProvider>
     );
@@ -239,23 +314,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
-        {/* Header with enhanced status */}
+        {/* Professional Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Chat App 💬</Text>
-          <Text style={styles.status}>
-            {connected ? '🟢 Connected' : '🔴 Offline Mode'}
+          <Text style={styles.headerTitle}>Chat</Text>
+          <Text style={styles.headerSubtitle}>
+            {connected ? 'Online' : 'Offline'} • {messages.length} messages
           </Text>
-          <Text style={styles.statsText}>
-            {messages.length} messages • {Object.keys(participants).length} participants
-          </Text>
-          {sessionUuid && (
-            <Text style={styles.sessionText}>
-              Session: {sessionUuid.substring(0, 8)}... • API v{apiVersion}
-            </Text>
-          )}
         </View>
 
-        {/* Error Display */}
+        {/* Error Banner */}
         {messagesError && (
           <View style={styles.errorBanner}>
             <Text style={styles.errorText}>⚠️ {messagesError}</Text>
@@ -268,7 +335,7 @@ export default function App() {
           </View>
         )}
 
-        {/* Messages List with Grouping */}
+        {/* Messages List */}
         <FlatList
           data={groupedMessages}
           renderItem={renderMessage}
@@ -277,35 +344,37 @@ export default function App() {
           contentContainerStyle={styles.messagesContent}
           inverted
           showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true} // Performance optimization
-          maxToRenderPerBatch={10} // Performance optimization
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={15}
         />
 
-        {/* Input Bar */}
+        {/* Professional Input Bar */}
         <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.textInput}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder={connected ? "Type a message..." : "Offline - Type a message..."}
-            multiline
-            editable={!sending}
-            maxLength={1000}
-          />
-          <TouchableOpacity 
-            onPress={sendMessage} 
-            style={[
-              styles.sendButton, 
-              (sending || !inputText.trim()) && styles.sendButtonDisabled
-            ]}
-            disabled={sending || !inputText.trim()}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={styles.sendButtonText}>Send</Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={styles.textInput}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Message..."
+              multiline
+              editable={!sending}
+              maxLength={1000}
+            />
+            <TouchableOpacity 
+              onPress={sendMessage} 
+              style={[
+                styles.sendButton, 
+                (sending || !inputText.trim()) && styles.sendButtonDisabled
+              ]}
+              disabled={sending || !inputText.trim()}
+            >
+              {sending ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Text style={styles.sendButtonText}>↗</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -315,58 +384,46 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   header: {
-    backgroundColor: '#007bff',
-    padding: 20,
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
     alignItems: 'center',
   },
   headerTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#000000',
   },
-  status: {
-    color: '#fff',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  statsText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 10,
-    marginTop: 2,
-  },
-  sessionText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 8,
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#8E8E93',
     marginTop: 2,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#666',
-  },
-  subText: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#999',
+    color: '#8E8E93',
   },
   errorBanner: {
-    backgroundColor: '#ffebee',
+    backgroundColor: '#FFEBEE',
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#ffcdd2',
+    borderBottomColor: '#FFCDD2',
   },
   errorText: {
-    color: '#c62828',
+    color: '#D32F2F',
     fontSize: 14,
     flex: 1,
   },
@@ -374,7 +431,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   dismissText: {
-    color: '#c62828',
+    color: '#D32F2F',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -385,80 +442,125 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   messageContainer: {
-    // Dynamic margins applied here
+    // Dynamic spacing applied via getSpacing()
   },
   messageBubble: {
-    backgroundColor: '#f0f0f0',
     padding: 12,
-    alignSelf: 'flex-start',
-    maxWidth: '80%',
-    // Dynamic border radius applied here
+    maxWidth: '75%',
+    // Dynamic border radius applied via getGroupedBorderRadius()
   },
   ownMessage: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#007AFF',
     alignSelf: 'flex-end',
   },
-  messageUser: {
-    fontWeight: 'bold',
-    fontSize: 12,
-    marginBottom: 4,
-    color: '#666',
+  otherMessage: {
+    backgroundColor: '#E5E5EA',
+    alignSelf: 'flex-start',
   },
-  ownMessageUser: {
-    color: 'rgba(255, 255, 255, 0.9)',
+  messageUser: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+    marginBottom: 4,
   },
   messageText: {
     fontSize: 16,
-    color: '#333',
     lineHeight: 20,
   },
-  groupedMessageText: {
-    // Slightly different styling for grouped messages
-  },
   ownMessageText: {
-    color: '#fff',
+    color: '#FFFFFF',
+  },
+  otherMessageText: {
+    color: '#000000',
+  },
+  editedText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  ownEditedText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  otherEditedText: {
+    color: '#8E8E93',
   },
   messageTime: {
-    fontSize: 10,
-    color: '#888',
+    fontSize: 12,
     marginTop: 4,
     textAlign: 'right',
   },
   ownMessageTime: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  otherMessageTime: {
+    color: '#8E8E93',
+  },
+  reactionsContainer: {
+    flexDirection: 'row',
+    marginTop: 4,
+    marginLeft: 8,
+    flexWrap: 'wrap',
+  },
+  reactionBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 6,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  reactionEmoji: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  reactionCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#007AFF',
   },
   inputContainer: {
-    flexDirection: 'row',
-    padding: 16,
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: '#E5E5EA',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
     alignItems: 'flex-end',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minHeight: 44,
   },
   textInput: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginRight: 12,
-    maxHeight: 100,
     fontSize: 16,
+    maxHeight: 100,
+    color: '#000000',
   },
   sendButton: {
-    backgroundColor: '#007bff',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    minWidth: 60,
+    backgroundColor: '#007AFF',
+    borderRadius: 18,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 8,
   },
   sendButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#C7C7CC',
   },
   sendButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
   },
 });
