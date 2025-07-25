@@ -1,8 +1,9 @@
+// src/api/info.js - REPLACE YOUR EXISTING FILE
 import axios from 'axios';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'https://dummy-chat-server.tribechat.com/api';
+// Hardcode API base for testing
+const API_BASE = 'https://dummy-chat-server.tribechat.com/api';
 
-// Reuse the same axios configuration as message.js
 const apiClient = axios.create({
   baseURL: API_BASE,
   timeout: 10000,
@@ -11,13 +12,14 @@ const apiClient = axios.create({
   },
 });
 
-// Add the same interceptors for consistency
+// Remove localStorage usage for Expo Go compatibility
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    // Skip auth for testing - localStorage doesn't exist in React Native
+    // const token = localStorage.getItem('authToken'); // REMOVED
+    // if (token) {
+    //   config.headers.Authorization = `Bearer ${token}`;
+    // }
     return config;
   },
   (error) => Promise.reject(error)
