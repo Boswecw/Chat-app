@@ -9,9 +9,9 @@ import {
   Text,
 } from 'react-native';
 
-import useMessageStore from '../state/messageStore';
-import { sendMessage } from '../api/messages';
-import useReply from '../hooks/useReply';
+import useMessageStore from '../../src_backup/state/messageStore';
+import { sendMessage } from '../../src_backup/api/messages';
+import useReply from '../../src_backup/hooks/useReply';
 
 const InputBar = () => {
   const [text, setText] = useState('');

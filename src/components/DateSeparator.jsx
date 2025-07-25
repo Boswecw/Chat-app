@@ -1,7 +1,7 @@
 // src/components/DateSeparator.jsx
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { formatDate } from '../utils/formatDate';
+import { formatDate } from '../../src_backup/utils/formatDate';
 
 const DateSeparator = ({ timestamp }) => {
   if (!timestamp) return null;

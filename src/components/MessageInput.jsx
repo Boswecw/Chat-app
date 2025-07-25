@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import Avatar from './Avatar';
 import ReactionRow from './ReactionRow';
-import { formatTime } from '../utils/formatDate';
+import { formatTime } from '../../src_backup/utils/formatDate';
 
 const MessageBubble = ({ message, isGrouped, onReact, onReactionPress, onParticipantPress }) => {
   const [showReactionRow, setShowReactionRow] = useState(false);
