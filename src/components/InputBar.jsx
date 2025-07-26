@@ -3,111 +3,232 @@ import React, { useState } from 'react';
 import {
   View,
   TextInput,
-  Button,
-  StyleSheet,
   TouchableOpacity,
   Text,
+  StyleSheet,
+  ActivityIndicator,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 
-import useMessageStore from '../../src_backup/state/messageStore';
-import { sendMessage } from '../../src_backup/api/messages';
-import useReply from '../../src_backup/hooks/useReply';
+import useMessageStore from '../stores/messageStore';
+import apiService from '../services/apiService';
+import useReply from '../hooks/useReply';
+import colors from '../constants/colors';
 
 const InputBar = () => {
   const [text, setText] = useState('');
-  const { addMessage } = useMessageStore();
-  const {
-    replyTo,
-    isReplying,
-    cancelReply,
-  } = useReply();
+  const [sending, setSending] = useState(false);
+  
+  const { addMessage, updateMessage } = useMessageStore();
+  const { replyTo, isReplying, cancelReply } = useReply();
 
   const handleSend = async () => {
-    if (!text.trim()) return;
+    const trimmedText = text.trim();
+    if (!trimmedText || sending) return;
+
+    setSending(true);
+    setText(''); // Clear input immediately for better UX
+
+    // Create optimistic message
+    const optimisticMessage = {
+      uuid: `temp-${Date.now()}`,
+      text: trimmedText,
+      authorUuid: 'you',
+      participant: {
+        uuid: 'you',
+        name: 'You',
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      reactions: [],
+      status: 'sending',
+      ...(isReplying && replyTo ? { replyToMessage: replyTo } : {}),
+    };
+
+    // Add optimistic message to store
+    addMessage(optimisticMessage);
 
     try {
-      const payload = {
-        text,
-        ...(isReplying && replyTo ? { replyToMessage: replyTo.uuid } : {}),
-      };
-
-      const newMessage = await sendMessage(payload.text); // NOTE: adjust if you customize API
-      addMessage(newMessage);
-      setText('');
-      cancelReply();
+      // Send to server
+      const serverMessage = await apiService.sendMessage(trimmedText, []);
+      
+      // Replace optimistic message with server response
+      updateMessage(optimisticMessage.uuid, {
+        ...serverMessage,
+        status: 'sent',
+        replyToMessage: isReplying ? replyTo : undefined,
+      });
+      
+      // Clear reply state if replying
+      if (isReplying) {
+        cancelReply();
+      }
     } catch (err) {
       console.error('❌ Error sending message:', err.message);
+      
+      // Update message status to failed
+      updateMessage(optimisticMessage.uuid, { status: 'failed' });
+      
+      // Restore text for retry
+      setText(trimmedText);
+      
+      // Show error alert
+      Alert.alert(
+        'Send Failed',
+        'Could not send message. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setSending(false);
     }
   };
 
   return (
-    <View style={styles.wrapper}>
-      {isReplying && replyTo && (
-        <View style={styles.replyPreview}>
-          <Text style={styles.replyLabel}>Replying to: {replyTo.participant?.name}</Text>
-          <Text style={styles.replyText} numberOfLines={1}>
-            {replyTo.text}
-          </Text>
-          <TouchableOpacity onPress={cancelReply}>
-            <Text style={styles.cancel}>×</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <View style={styles.wrapper}>
+        {isReplying && replyTo && (
+          <View style={styles.replyPreview}>
+            <View style={styles.replyIndicator} />
+            <View style={styles.replyContent}>
+              <Text style={styles.replyLabel}>
+                Replying to {replyTo.participant?.name || 'Unknown'}
+              </Text>
+              <Text style={styles.replyText} numberOfLines={1}>
+                {replyTo.text}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={cancelReply} style={styles.cancelButton}>
+              <Text style={styles.cancelIcon}>×</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder={isReplying ? 'Write a reply…' : 'Type a message…'}
+            placeholderTextColor={colors.textMuted}
+            value={text}
+            onChangeText={setText}
+            multiline
+            maxLength={1000}
+            editable={!sending}
+            onSubmitEditing={handleSend}
+            returnKeyType="send"
+          />
+          
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              (!text.trim() || sending) && styles.sendButtonDisabled,
+            ]}
+            onPress={handleSend}
+            disabled={!text.trim() || sending}
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Text style={styles.sendText}>Send</Text>
+            )}
           </TouchableOpacity>
         </View>
-      )}
-
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          placeholder={isReplying ? 'Write a reply…' : 'Type a message…'}
-          value={text}
-          onChangeText={setText}
-        />
-        <Button title="Send" onPress={handleSend} />
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   wrapper: {
-    padding: 10,
     borderTopWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
   },
+  
+  // Reply preview styles
   replyPreview: {
-    backgroundColor: '#f0f0f0',
-    borderRadius: 6,
-    padding: 6,
-    marginBottom: 6,
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.surface,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  replyIndicator: {
+    width: 3,
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: 2,
+    marginRight: 8,
+  },
+  replyContent: {
+    flex: 1,
   },
   replyLabel: {
+    fontSize: 12,
     fontWeight: '600',
-    marginRight: 6,
+    color: colors.primary,
+    marginBottom: 2,
   },
   replyText: {
-    flex: 1,
-    color: '#555',
+    fontSize: 14,
+    color: colors.textMuted,
   },
-  cancel: {
+  cancelButton: {
+    padding: 4,
     marginLeft: 8,
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#888',
   },
+  cancelIcon: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.textMuted,
+  },
+  
+  // Input row styles
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   input: {
     flex: 1,
-    borderColor: '#ccc',
     borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginRight: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 12,
+    fontSize: 16,
+    maxHeight: 100,
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
+  sendButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 60,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: colors.textMuted,
+    opacity: 0.6,
+  },
+  sendText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });
 
